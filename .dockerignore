@@ -1,0 +1,17 @@
+config/mentors.example.json
+config/mentors.local.json
+.env.example
+.env.local
+
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.venv/
+env/
+venv/
+.DS_Store
+.git/
+.gitignore
+README.md
