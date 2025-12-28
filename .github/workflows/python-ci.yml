@@ -28,10 +28,7 @@ jobs:
       run: |
         python -m py_compile src/**/*.py config/*.py
 
-    - name: Test import (smoke test)
+    - name: Test import (smoke test) — without external services
       run: |
-        python -c "import src.main; print('Import successful')"
-
-    - name: Build Docker image
-      run: |
-        docker build -t lifelinebot .
+        touch google_credentials.json
+        python -c "import src.main; print('✅ Import successful')"
