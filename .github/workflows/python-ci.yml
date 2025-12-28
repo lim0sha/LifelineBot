@@ -30,5 +30,12 @@ jobs:
 
     - name: Test import (smoke test) — without external services
       run: |
+        # Создаем фейковые файлы, чтобы избежать FileNotFoundError
         touch google_credentials.json
+        mkdir -p config
+        echo '{}' > config/mentors.json
         python -c "import src.main; print('✅ Import successful')"
+
+    - name: Build Docker image
+      run: |
+        docker build -t lifelinebot .
