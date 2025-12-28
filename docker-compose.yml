@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  bot:
+    build: .
+    env_file: .env
+    volumes:
+      - ./google_credentials.json:/app/google_credentials.json:ro
+    restart: unless-stopped
+    depends_on:
+      - mongo
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import os; assert os.path.exists('/app/src/main.py')" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  mongo:
+    image: mongo:7.0
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+    ports:
+      - "27017:27017"
+
+volumes:
+  mongo_data:
