@@ -11,7 +11,7 @@ Powered by:
 
 ## 🚀 Features
 - **User onboarding**: auto-create profile on first use
-- 🕵**Anonymous messaging**: send confidential notes to team leads
+- **Anonymous messaging**: send confidential notes to team leads
 - **AI-powered advice**: get empathetic, free LLM responses via OpenRouter
 - **Meeting requests**: schedule 1:1s with mentors
 - **Personal development tracking**:
