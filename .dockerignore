@@ -16,3 +16,4 @@ venv/
 .gitignore
 README.md
 /docs/*
+docs
