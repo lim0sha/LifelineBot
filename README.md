@@ -227,8 +227,7 @@ ArtLifelineBot/
 ├── google_credentials.json # Google Service Account key
 ├── docker-compose.yml
 ├── Dockerfile
-├── requirements.txt
-└── .env.example
+└── requirements.txt
 ```
 
 ---

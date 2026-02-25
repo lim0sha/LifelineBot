@@ -1,9 +1,4 @@
-.env
-.env.local
-config/mentors.json
-config/mentors.local.json
 __pycache__/
 *.pyc
-/google_credentials.json
 .venv
 .idea

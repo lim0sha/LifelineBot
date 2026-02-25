@@ -1,8 +1,3 @@
-config/mentors.example.json
-config/mentors.local.json
-.env.example
-.env.local
-
 __pycache__/
 *.pyc
 *.pyo
