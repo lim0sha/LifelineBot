@@ -121,7 +121,6 @@ async def send_email(to: str, subject: str, html: str, text: str) -> bool:
                     hostname="smtp.gmail.com",
                     port=587,
                     start_tls=True,
-                    use_tls=True,
                     username=GMAIL_USER,
                     password=GMAIL_PASS,
                     timeout=SMTP_TIMEOUT
