@@ -101,6 +101,8 @@ async def send_email(to: str, subject: str, html: str, text: str) -> bool:
         logger.warning(f"Email subject too long, truncating: {len(subject)} chars")
         subject = subject[:200]
 
+    logger.info(f"Starting to send email to {to}...")
+
     async with _rate_limit_semaphore:
         for attempt in range(MAX_RETRIES):
             try:
@@ -111,6 +113,8 @@ async def send_email(to: str, subject: str, html: str, text: str) -> bool:
 
                 msg.attach(MIMEText(text, "plain", "utf-8"))
                 msg.attach(MIMEText(html, "html", "utf-8"))
+
+                logger.debug(f"Connecting to smtp.gmail.com:465...")
 
                 await aiosmtplib.send(
                     msg,

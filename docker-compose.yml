@@ -5,6 +5,9 @@ services:
     restart: unless-stopped
     depends_on:
       - mongo
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     healthcheck:
       test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
       interval: 30s

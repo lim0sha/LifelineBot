@@ -14,7 +14,7 @@ router = Router()
 logger = logging.getLogger(__name__)
 
 MAX_MESSAGE_LENGTH = 2000
-EMAIL_TIMEOUT = 30
+EMAIL_TIMEOUT = 90
 
 
 def rate_limit_middleware(handler):
