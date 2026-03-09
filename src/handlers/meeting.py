@@ -62,7 +62,6 @@ async def process_meeting_message(message: types.Message, state: FSMContext, **k
     user = message.from_user
     data = await state.get_data()
     mentor = data["selected_mentor"]
-    email = MENTORS[mentor]
     text = message.text or "Без сообщения"
 
     profile = await get_user_profile(user.id)
@@ -77,11 +76,11 @@ async def process_meeting_message(message: types.Message, state: FSMContext, **k
     if user.username:
         display_name = f"{display_name} (@{user.username})"
 
-    success = await send_meeting_request(mentor, email, display_name, text)
+    success = await send_meeting_request(message.bot, mentor, display_name, text)
     if not success:
-        await message.answer("⚠️ Не удалось отправить письмо. Попробуйте позже.")
+        await message.answer("⚠️ Не удалось отправить запрос. Попробуйте позже.")
     else:
-        await message.answer("✅ Письмо отправлено!")
+        await message.answer("✅ Запрос отправлен!")
 
     await log_action(user.id, "meeting_request", {"mentor": mentor, "message": text})
 
