@@ -9,7 +9,7 @@ from aiogram.fsm.context import FSMContext
 
 from src.bot.fsm import MeetingStates
 from src.services.audit import log_action
-from src.services.email_sender import send_meeting_request_email
+from src.services.email_sender import send_meeting_request
 from src.services.google_sheets import get_user_profile
 from src.services.rate_limiter import rate_limiter
 from src.utils.menu_utils import send_main_menu
@@ -123,7 +123,7 @@ async def process_meeting_message(message: types.Message, state: FSMContext):
             display_name = f"{display_name} (@{user.username})"
 
         success = await asyncio.wait_for(
-            send_meeting_request_email(mentor, email, display_name, text),
+            send_meeting_request(mentor, email, display_name, text),
             timeout=EMAIL_TIMEOUT
         )
 

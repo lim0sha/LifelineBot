@@ -6,7 +6,7 @@ from aiogram.fsm.context import FSMContext
 
 from src.bot.fsm import AnonymousStates
 from src.services.audit import log_action
-from src.services.email_sender import send_anonymous_email
+from src.services.email_sender import send_anonymous_message
 from src.handlers.menu import send_main_menu_local
 from src.services.rate_limiter import rate_limiter
 
@@ -14,7 +14,7 @@ router = Router()
 logger = logging.getLogger(__name__)
 
 MAX_MESSAGE_LENGTH = 2000
-EMAIL_TIMEOUT = 90
+MESSAGE_TIMEOUT = 90
 
 
 def rate_limit_middleware(handler):
@@ -53,9 +53,10 @@ async def process_anonymous_message(message: types.Message, state: FSMContext, *
         return
 
     try:
+        bot = message.bot
         success = await asyncio.wait_for(
-            send_anonymous_email(text),
-            timeout=EMAIL_TIMEOUT
+            send_anonymous_message(bot, text),
+            timeout=MESSAGE_TIMEOUT
         )
 
         if success:

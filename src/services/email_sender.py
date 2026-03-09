@@ -6,9 +6,10 @@ import re
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict
 
 import aiosmtplib
+from aiogram import Bot
 from dotenv import load_dotenv
 from jinja2 import Template
 
@@ -18,6 +19,9 @@ CURRENT_FILE_DIR = Path(__file__).parent
 SRC_DIR = CURRENT_FILE_DIR.parent
 TEMPLATE_DIR = SRC_DIR / "templates" / "email"
 CONFIG_DIR = SRC_DIR.parent / "config"
+
+MENTORS_TG_PATH = CONFIG_DIR / "mentors_tg.json"
+MENTORS_EMAIL_PATH = CONFIG_DIR / "mentors.json"
 
 GMAIL_USER = os.getenv("GMAIL_EMAIL")
 GMAIL_PASS = os.getenv("GMAIL_APP_PASSWORD")
@@ -30,6 +34,11 @@ _rate_limit_semaphore = asyncio.Semaphore(EMAIL_RATE_LIMIT)
 logger = logging.getLogger(__name__)
 
 _EMAIL_PATTERN = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
+
+_MEETING_TEMPLATES: Optional[Tuple[Template, Template]] = None
+_ANON_TEMPLATES: Optional[Tuple[Template, Template]] = None
+_mentors_tg_cache: Optional[Dict[str, int]] = None
+_mentors_email_cache: Optional[Dict[str, str]] = None
 
 
 def _validate_email(email: str) -> bool:
@@ -70,10 +79,6 @@ async def _load_template_async(name: str) -> Tuple[Template, Template]:
     return html_tmpl, text_tmpl
 
 
-_MEETING_TEMPLATES: Optional[Tuple[Template, Template]] = None
-_ANON_TEMPLATES: Optional[Tuple[Template, Template]] = None
-
-
 async def _get_meeting_templates() -> Tuple[Template, Template]:
     global _MEETING_TEMPLATES
     if _MEETING_TEMPLATES is None:
@@ -88,7 +93,103 @@ async def _get_anon_templates() -> Tuple[Template, Template]:
     return _ANON_TEMPLATES
 
 
+async def _get_mentors_tg() -> Dict[str, int]:
+    """Загружает mapping имён → Telegram chat_id из JSON."""
+    global _mentors_tg_cache
+    if _mentors_tg_cache is not None:
+        return _mentors_tg_cache
+
+    loop = asyncio.get_running_loop()
+
+    def load_mentors():
+        with open(MENTORS_TG_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    try:
+        _mentors_tg_cache = await loop.run_in_executor(None, load_mentors)
+        logger.info(f"Loaded {len(_mentors_tg_cache)} mentors from mentors_tg.json")
+        return _mentors_tg_cache
+    except FileNotFoundError:
+        logger.error(f"mentors_tg.json not found at {MENTORS_TG_PATH}")
+        return {}
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON in mentors_tg.json: {e}", exc_info=True)
+        return {}
+
+
+async def _get_mentors_email() -> Dict[str, str]:
+    """Загружает mapping имён → Email из JSON."""
+    global _mentors_email_cache
+    if _mentors_email_cache is not None:
+        return _mentors_email_cache
+
+    loop = asyncio.get_running_loop()
+
+    def load_mentors():
+        with open(MENTORS_EMAIL_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    try:
+        _mentors_email_cache = await loop.run_in_executor(None, load_mentors)
+        logger.info(f"Loaded {len(_mentors_email_cache)} mentors from mentors.json")
+        return _mentors_email_cache
+    except FileNotFoundError:
+        logger.error(f"mentors.json not found at {MENTORS_EMAIL_PATH}")
+        return {}
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON in mentors.json: {e}", exc_info=True)
+        return {}
+
+
+async def _get_mentor_chat_id(mentor_name: str) -> Optional[int]:
+    """Получает chat_id ментора по имени."""
+    mentors = await _get_mentors_tg()
+    chat_id = mentors.get(mentor_name)
+
+    if not chat_id:
+        logger.warning(f"Mentor '{mentor_name}' not found in mentors_tg.json")
+
+    return chat_id
+
+
+async def _get_mentor_email(mentor_name: str) -> Optional[str]:
+    """Получает email ментора по имени."""
+    mentors = await _get_mentors_email()
+    email = mentors.get(mentor_name)
+
+    if not email:
+        logger.warning(f"Mentor '{mentor_name}' not found in mentors.json")
+
+    return email
+
+
+async def _send_telegram_message(bot: Bot, chat_id: int, text: str, parse_mode: str = "HTML") -> bool:
+    """Отправляет сообщение в Telegram с retry-логикой."""
+    for attempt in range(MAX_RETRIES):
+        try:
+            await bot.send_message(
+                chat_id=chat_id,
+                text=text,
+                parse_mode=parse_mode
+            )
+            logger.info(f"Telegram message sent to chat_id={chat_id}")
+            return True
+
+        except Exception as e:
+            logger.warning(
+                f"Telegram send failed (attempt {attempt + 1}/{MAX_RETRIES}): "
+                f"{type(e).__name__}: {e}"
+            )
+            if attempt < MAX_RETRIES - 1:
+                await asyncio.sleep(0.5 * (2 ** attempt))
+                continue
+            return False
+
+    return False
+
+
 async def send_email(to: str, subject: str, html: str, text: str) -> bool:
+    """Отправляет email через Gmail SMTP (фоллбэк метод)."""
     if not _validate_email(to):
         logger.error(f"Invalid email address: {to}")
         return False
@@ -114,7 +215,7 @@ async def send_email(to: str, subject: str, html: str, text: str) -> bool:
                 msg.attach(MIMEText(text, "plain", "utf-8"))
                 msg.attach(MIMEText(html, "html", "utf-8"))
 
-                logger.debug(f"Connecting to smtp.gmail.com:465...")
+                logger.debug(f"Connecting to smtp.gmail.com:587...")
 
                 await aiosmtplib.send(
                     msg,
@@ -154,14 +255,43 @@ async def send_email(to: str, subject: str, html: str, text: str) -> bool:
     return False
 
 
-async def send_meeting_request_email(mentor_name: str, to: str, display_name: str, message: str) -> bool:
+async def send_meeting_request(
+    bot: Bot,
+    mentor_name: str,
+    display_name: str,
+    message: str
+) -> bool:
+    """
+    Отправляет запрос на встречу ментору.
+    Приоритет: 1️⃣ Telegram → 2️⃣ Email (фоллбэк)
+    """
     if not message or len(message.strip()) == 0:
-        logger.warning("Empty message in send_meeting_request_email")
+        logger.warning("Empty message in send_meeting_request")
         message = "Без сообщения"
 
     if len(message) > 5000:
         logger.warning(f"Message too long, truncating: {len(message)} chars")
         message = message[:5000]
+
+    chat_id = await _get_mentor_chat_id(mentor_name)
+    if chat_id:
+        text = (
+            f"📅 <b>Запрос на встречу</b>\n\n"
+            f"👤 <b>От:</b> {display_name}\n"
+            f"📝 <b>Сообщение:</b>\n{message}"
+        )
+
+        tg_success = await _send_telegram_message(bot, chat_id, text)
+        if tg_success:
+            logger.info(f"Meeting request sent to {mentor_name} via Telegram (chat_id={chat_id})")
+            return True
+        else:
+            logger.warning(f"Telegram failed for {mentor_name}, falling back to email")
+
+    email = await _get_mentor_email(mentor_name)
+    if not email:
+        logger.error(f"Cannot send meeting request: mentor '{mentor_name}' not found in mentors.json")
+        return False
 
     try:
         html_tmpl, text_tmpl = await _get_meeting_templates()
@@ -175,58 +305,55 @@ async def send_meeting_request_email(mentor_name: str, to: str, display_name: st
             )
         )
 
-        success = await send_email(to, f"Запрос на встречу от {display_name}", html, text)
-        return success
+        email_success = await send_email(email, f"Запрос на встречу от {display_name}", html, text)
+        if email_success:
+            logger.info(f"Meeting request sent to {mentor_name} via Email ({email})")
+            return True
+        else:
+            logger.error(f"Failed to send meeting request to {mentor_name} via Email")
+            return False
 
     except Exception as e:
-        logger.error(f"Error in send_meeting_request_email: {type(e).__name__}: {e}", exc_info=True)
+        logger.error(f"Error in send_meeting_request: {type(e).__name__}: {e}", exc_info=True)
         return False
 
 
-async def send_anonymous_email(message: str) -> bool:
+async def send_anonymous_message(bot: Bot, message: str) -> bool:
+    """
+    Отправляет анонимное сообщение Насте.
+    Приоритет: 1️⃣ Telegram → 2️⃣ Email (фоллбэк)
+    """
     if not message or len(message.strip()) == 0:
-        logger.warning("Empty message in send_anonymous_email")
+        logger.warning("Empty message in send_anonymous_message")
         return False
 
     if len(message) > 5000:
         logger.warning(f"Anonymous message too long, truncating: {len(message)} chars")
         message = message[:5000]
 
-    admin_chat_id = os.getenv("ADMIN_CHAT_ID")
-
-    if admin_chat_id:
-        try:
-            admin_chat_id = int(admin_chat_id)
-            from src.bot.bot import create_bot
-            bot = create_bot()
-
-            await bot.send_message(
-                admin_chat_id,
-                f"📬 Анонимное сообщение:\n\n{message}"
-            )
-            await bot.session.close()
-            logger.info(f"Anonymous message sent to Telegram admin (chat_id={admin_chat_id})")
-            return True
-
-        except Exception as e:
-            logger.error(f"Failed to send to Telegram admin: {e}", exc_info=True)
-
-    try:
-        mentors_path = CONFIG_DIR / "mentors.json"
-
-        loop = asyncio.get_running_loop()
-        mentors = await loop.run_in_executor(
-            None,
-            lambda: json.loads(open(mentors_path, "r", encoding="utf-8").read())
+    chat_id = await _get_mentor_chat_id("Настя")
+    if chat_id:
+        text = (
+            f"📬 <b>Анонимное сообщение</b>\n\n"
+            f"📝 <b>Текст:</b>\n{message}"
         )
 
-        to = mentors.get("Настя")
-        if not to:
-            logger.error("Mentor 'Настя' not found in mentors.json")
-            return False
+        tg_success = await _send_telegram_message(bot, chat_id, text)
+        if tg_success:
+            logger.info(f"Anonymous message sent to Настя via Telegram (chat_id={chat_id})")
+            return True
+        else:
+            logger.warning("Telegram failed for Настя, falling back to email")
 
+    email = await _get_mentor_email("Настя")
+    if not email:
+        logger.error("Cannot send anonymous message: mentor 'Настя' not found in mentors.json")
+        return False
+
+    try:
         html_tmpl, text_tmpl = await _get_anon_templates()
 
+        loop = asyncio.get_running_loop()
         html, text = await loop.run_in_executor(
             None,
             lambda: (
@@ -235,15 +362,20 @@ async def send_anonymous_email(message: str) -> bool:
             )
         )
 
-        success = await send_email(to, "Анонимное сообщение в АРТе", html, text)
-        return success
+        email_success = await send_email(email, "Анонимное сообщение в АРТе", html, text)
+        if email_success:
+            logger.info(f"Anonymous message sent to Настя via Email ({email})")
+            return True
+        else:
+            logger.error("Failed to send anonymous message via Email")
+            return False
 
     except FileNotFoundError as e:
-        logger.error(f"mentors.json not found: {e}", exc_info=True)
+        logger.error(f"Email templates not found: {e}", exc_info=True)
         return False
     except json.JSONDecodeError as e:
         logger.error(f"Invalid JSON in mentors.json: {e}", exc_info=True)
         return False
     except Exception as e:
-        logger.error(f"Error in send_anonymous_email: {type(e).__name__}: {e}", exc_info=True)
+        logger.error(f"Error in send_anonymous_message: {type(e).__name__}: {e}", exc_info=True)
         return False
