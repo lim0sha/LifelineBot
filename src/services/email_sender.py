@@ -192,6 +192,25 @@ async def send_anonymous_email(message: str) -> bool:
         logger.warning(f"Anonymous message too long, truncating: {len(message)} chars")
         message = message[:5000]
 
+    admin_chat_id = os.getenv("ADMIN_CHAT_ID")
+
+    if admin_chat_id:
+        try:
+            admin_chat_id = int(admin_chat_id)
+            from src.bot.bot import create_bot
+            bot = create_bot()
+
+            await bot.send_message(
+                admin_chat_id,
+                f"📬 Анонимное сообщение:\n\n{message}"
+            )
+            await bot.session.close()
+            logger.info(f"Anonymous message sent to Telegram admin (chat_id={admin_chat_id})")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to send to Telegram admin: {e}", exc_info=True)
+
     try:
         mentors_path = CONFIG_DIR / "mentors.json"
 
