@@ -2,3 +2,9 @@ __pycache__/
 *.pyc
 .venv
 .idea
+opencode.txt
+
+.env
+config/mentors.json
+config/mentors_tg.json
+google_credentials.json
